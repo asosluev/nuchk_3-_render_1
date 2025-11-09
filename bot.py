@@ -60,7 +60,7 @@ async def main():
     print(f"Webhook set to: {WEBHOOK_URL}/webhook")
     print(f"Server started on 0.0.0.0:{PORT}")
 
-    # чекаємо завершення (підтримка роботи без завершення)
+    # чекаємо завершення
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
