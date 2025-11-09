@@ -1,56 +1,66 @@
 # bot.py
-import asyncio
-from aiohttp import web
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
-from config import BOT_TOKEN, WEBHOOK_URL, PORT
-from handlers.menu import start_menu, menu_callback, register_handlers as register_menu_handlers
-from handlers.admin import register_handlers as register_admin_handlers
+import logging
+import os
+from telegram.ext import ApplicationBuilder, CommandHandler
+from config import TOKEN, WELCOME_TEXT
+from handlers.menu import start_menu, register_handlers as menu_register
+from handlers.admin import register_handlers as admin_register
+from handlers.menu import menu_manager
 
-async def health(request):
-    return web.Response(text="OK")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-async def handle_webhook(request):
-    try:
-        data = await request.json()
-        print("Update received:", data)  # лог апдейту для дебагу
-    except Exception as e:
-        print("Invalid request:", e)
-        return web.Response(status=400, text="Invalid request")
-    
-    update = Update.de_json(data, app.bot)
-    await app.update_queue.put(update)
-    return web.Response(text="OK")
+# === Webhook config ===
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Render дає цей URL
+PORT = int(os.getenv("PORT", 8080))     # Render використовує PORT із env
+# ======================
 
-async def main():
-    global app
-    # Створюємо Application
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Команди
-    app.add_handler(CommandHandler("start", start_menu))
+# Команди
+async def start_cmd(update, context):
+    await start_menu(update, context)
 
-    # Підключаємо меню та адмін-хендлери
-    register_menu_handlers(app)
-    register_admin_handlers(app)
+async def help_cmd(update, context):
+    text = (
+        "/start — головне меню\n"
+        "/help — ця довідка\n"
+        "/about — коротко про університет\n"
+        "/reload — перезавантажити menu.json (тільки адміни)\n"
+    )
+    await update.message.reply_text(text)
 
-    # aiohttp сервер
-    aio_app = web.Application()
-    aio_app.router.add_post("/webhook", handle_webhook)
-    aio_app.router.add_get("/", health)
+async def about_cmd(update, context):
+    about = menu_manager.info.get('about', 'Інформація про університет відсутня.')
+    await update.message.reply_text(about)
 
-    runner = web.AppRunner(aio_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
 
-    # Встановлюємо webhook у Telegram
-    await app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
-    print(f"Webhook set to: {WEBHOOK_URL}/webhook")
-    print(f"Server started on 0.0.0.0:{PORT}")
+def main():
+    if TOKEN == 'PUT_YOUR_TOKEN_HERE' or not TOKEN:
+        raise RuntimeError("TG_BOT_TOKEN не вказаний в .env або в середовищі")
 
-    # Чекаємо завершення
-    await asyncio.Event().wait()
+    application = ApplicationBuilder().token(TOKEN).build()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    # Зберігаємо привітальний текст у bot_data
+    application.bot_data['welcome_text'] = WELCOME_TEXT
+
+    # Стандартні команди
+    application.add_handler(CommandHandler('start', start_cmd))
+    application.add_handler(CommandHandler('help', help_cmd))
+    application.add_handler(CommandHandler('about', about_cmd))
+
+    # Реєстрація хендлерів меню та адмін-панелі
+    menu_register(application)
+    admin_register(application)
+
+    logger.info("Bot started (webhook mode).")
+
+    # === запуск через webhook ===
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TOKEN,
+        webhook_url=f"{WEBHOOK_URL}/{TOKEN}"
+    )
+
+if __name__ == '__main__':
+    main()
