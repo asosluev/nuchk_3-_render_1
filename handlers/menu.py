@@ -60,11 +60,13 @@ class MenuManager:
 menu_manager = MenuManager()
 
 # Start / show root menu
-# тестова версія start_menu
-async def start_menu(update: Update, context):
-    print("start_menu called")  # лог у Render
-    await update.message.reply_text("✅ Бот працює. Меню буде тут.")
-
+async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = WELCOME_TEXT
+    markup = menu_manager.build_markup(menu_manager.menu, [])
+    if update.message:
+        await update.message.reply_text(text, reply_markup=markup)
+    elif update.callback_query:
+        await update.callback_query.message.edit_text(text, reply_markup=markup)
 
 # Helper: safely delete stored image message (if any)
 async def _delete_prev_image(context: ContextTypes.DEFAULT_TYPE):
