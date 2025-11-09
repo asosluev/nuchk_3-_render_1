@@ -2,67 +2,54 @@
 import asyncio
 from aiohttp import web
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler
 from config import BOT_TOKEN, WEBHOOK_URL, PORT
-from handlers.menu import start_menu, register_handlers as register_menu_handlers
+from handlers.menu import start_menu, menu_callback, register_handlers as register_menu_handlers
 from handlers.admin import register_handlers as register_admin_handlers
 
+async def health(request):
+    return web.Response(text="OK")
 
-
-# --- Команди ---
-async def start_command(update: Update, context):
-    await start_menu(update, context)
-
-async def help_command(update: Update, context):
-    await update.message.reply_text(
-        "🤖 Бот університету\n\n"
-        "/start — відкрити меню\n"
-        "/help — ця довідка\n"
-        "/reload — (адмін) перечитати JSON"
-    )
+async def handle_webhook(request):
+    try:
+        data = await request.json()
+        print("Update received:", data)  # лог апдейту для дебагу
+    except Exception as e:
+        print("Invalid request:", e)
+        return web.Response(status=400, text="Invalid request")
+    
+    update = Update.de_json(data, app.bot)
+    await app.update_queue.put(update)
+    return web.Response(text="OK")
 
 async def main():
-    # створюємо Application
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    global app
+    # Створюємо Application
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # базові команди
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
+    # Команди
+    app.add_handler(CommandHandler("start", start_menu))
 
-    # підключаємо меню і адмін-хендлери
-    register_menu_handlers(application)
-    register_admin_handlers(application)
+    # Підключаємо меню та адмін-хендлери
+    register_menu_handlers(app)
+    register_admin_handlers(app)
 
-    # aiohttp сервер для webhook
-    async def health(request):
-        return web.Response(text="OK")
+    # aiohttp сервер
+    aio_app = web.Application()
+    aio_app.router.add_post("/webhook", handle_webhook)
+    aio_app.router.add_get("/", health)
 
-    async def handle_webhook(request):
-        try:
-            data = await request.json()
-        except Exception:
-            return web.Response(status=400, text="Invalid request")
-        
-        update = Update.de_json(data, application.bot)
-        await application.update_queue.put(update)
-        return web.Response(text="OK")
-
-    app = web.Application()
-    app.router.add_post("/webhook", handle_webhook)
-    app.router.add_get("/", health)
-
-    # запускаємо aiohttp
-    runner = web.AppRunner(app)
+    runner = web.AppRunner(aio_app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
 
-    # встановлюємо webhook у Telegram
-    await application.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
+    # Встановлюємо webhook у Telegram
+    await app.bot.set_webhook(url=f"{WEBHOOK_URL}/webhook")
     print(f"Webhook set to: {WEBHOOK_URL}/webhook")
     print(f"Server started on 0.0.0.0:{PORT}")
 
-    # чекаємо завершення
+    # Чекаємо завершення
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
