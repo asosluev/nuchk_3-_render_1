@@ -7,6 +7,8 @@ from config import BOT_TOKEN, WEBHOOK_URL, PORT
 from handlers.menu import start_menu, register_handlers as register_menu_handlers
 from handlers.admin import register_handlers as register_admin_handlers
 
+
+
 # --- Команди ---
 async def start_command(update: Update, context):
     await start_menu(update, context)
